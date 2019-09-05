@@ -375,41 +375,45 @@ open class OAuth2Swift: OAuthSwift {
         return authorize(withCallbackURL: callbackURL, scope: scope, state: state, parameters: parameters + pkceParameters, headers: headers, completionHandler: completion)
     }
     
+    /// MMM Extension
     // perform a token introspection call (RFC 7662); normally this is only for access tokens
     @discardableResult
-     open func checkToken(checkURL:String, checkURLParameter:String, token: String, parameters: OAuthSwift.Parameters? = nil, headers: OAuthSwift.Headers? = nil, success: @escaping TokenSuccessHandler, failure: FailureHandler?) -> OAuthSwiftRequestHandle? {
+    open func checkToken(checkURL:String, checkURLParameter:String, token: String, parameters: OAuthSwift.Parameters? = nil, headers: OAuthSwift.Headers? = nil, completionHandler completion: @escaping TokenCompletionHandler) -> OAuthSwiftRequestHandle? {
      
-     var parameters = parameters ?? OAuthSwift.Parameters()
-     parameters[checkURLParameter] = token
-     
-     let successHandler: OAuthSwiftHTTPRequest.SuccessHandler = { [weak self] response in
-     guard let this = self else {
-     OAuthSwift.retainError(failure)
-     return
-     }
-     let responseJSON: Any? = try? response.jsonObject(options: .mutableContainers)
-     
-     let responseParameters: OAuthSwift.Parameters
-     
-     if let jsonDico = responseJSON as? [String: Any] {
-     responseParameters = jsonDico
-     } else {
-     responseParameters = response.string?.parametersFromQueryString ?? [:]
-     }
-     
-     let tempCred:OAuthSwiftCredential = OAuthSwiftCredential()
-     tempCred.oauthToken = token
-     
-     if let expiresIn = responseParameters["expires_in"] as? String, let offset = Double(expiresIn) {
-     tempCred.oauthTokenExpiresAt = Date(timeInterval: offset, since: Date())
-     } else if let expiresIn = responseParameters["expires_in"] as? Double {
-     tempCred.oauthTokenExpiresAt = Date(timeInterval: expiresIn, since: Date())
-     }
-     
-     success(tempCred, response, responseParameters)
-     }
-     
-     // Request status on the access token
-     return self.client.request(checkURL, method: .GET, parameters: parameters, headers: headers, checkTokenExpiration: false, success: successHandler, failure: failure)
-     }
+        var parameters = parameters ?? OAuthSwift.Parameters()
+        parameters[checkURLParameter] = token
+        
+        let localCompleteHandler: OAuthSwiftHTTPRequest.CompletionHandler = { result in
+            switch result {
+            case .success(let response):
+                let responseJSON: Any? = try? response.jsonObject(options: .mutableContainers)
+                let responseParameters: OAuthSwift.Parameters
+                
+                if let jsonDico = responseJSON as? [String: Any] {
+                    responseParameters = jsonDico
+                } else {
+                    responseParameters = response.string?.parametersFromQueryString ?? [:]
+                }
+                
+                let tempCred:OAuthSwiftCredential = OAuthSwiftCredential()
+                tempCred.oauthToken = token
+                
+                if let expiresIn = responseParameters["expires_in"] as? String, let offset = Double(expiresIn) {
+                    tempCred.oauthTokenExpiresAt = Date(timeInterval: offset, since: Date())
+                } else if let expiresIn = responseParameters["expires_in"] as? Double {
+                    tempCred.oauthTokenExpiresAt = Date(timeInterval: expiresIn, since: Date())
+                }
+                
+                completion(.success((tempCred, response, responseParameters)))
+                break
+                
+            case .failure(let error):
+                completion(.failure(error))
+                break
+            }
+        }
+        
+        // Request status on the access token
+        return self.client.request(checkURL, method: .GET, parameters: parameters, headers: headers, checkTokenExpiration: false, completionHandler: localCompleteHandler)
+    }
 }
